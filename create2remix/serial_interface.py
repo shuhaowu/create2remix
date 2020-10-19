@@ -45,6 +45,8 @@ class SerialInterface(serial.threaded.Protocol):
     self.add_packet(Packets.STASIS)
 
     self.corrupted_packets = 0
+    self.total_packets = 0
+    self.sensor_callbacks = []
 
     self._thr = None
 
@@ -59,6 +61,11 @@ class SerialInterface(serial.threaded.Protocol):
     self._current_packet_data = []
 
     self._sensor_data_next = Packets()
+
+  # TODO: refactor the add_packet, add_sensors_callback at some point as this code
+  # is not great.
+  def add_sensor_callback(self, f):
+    self.sensor_callbacks.append(f)
 
   def add_packet(self, packet_id):
     self.num_packets_per_stream += 1
@@ -129,7 +136,8 @@ class SerialInterface(serial.threaded.Protocol):
         self._expected_bytes_read = unsigned_byte
         self._bytes_read = 0
         self.logger.trace("received nbytes = {}".format(unsigned_byte))
-        # TODO: if byte != 80
+
+        # TODO: validate
 
       elif self._read_state == self.READ_PACKET_ID:
         self._current_packet_id = unsigned_byte
@@ -149,6 +157,7 @@ class SerialInterface(serial.threaded.Protocol):
           data = self._current_packet_decoder(self._current_packet_data)
           self._sensor_data_next[self._current_packet_id] = data
           self.logger.trace("decoded data {} for packet {}".format(data, self._current_packet_id))
+
           # TODO: validate
 
           if self._bytes_read >= self._expected_bytes_read:
@@ -166,9 +175,18 @@ class SerialInterface(serial.threaded.Protocol):
           self.sensor_data = self._sensor_data_next
           self.sensor_data[Packets.TIMESTAMP] = time.time()
           self._sensor_data_next = Packets()
+          for f in self.sensor_callbacks:
+            try:
+              f(self.sensor_data)
+            except Exception as e:
+              traceback.print_exc()
+              self.logger.error("failed to process sensor data via {}: {}, ignoring...".format(f.__name__, e))
+
         else:
           self.corrupted_packets += 1
           self.logger.warn("failed checksum: {} & 0xFF = {}".format(self._checksum, checks_out))
+
+        self.total_packets += 1
 
         self._read_state = self.READ_HEADER
 

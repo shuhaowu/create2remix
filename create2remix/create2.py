@@ -36,7 +36,16 @@ class Create2(object):
     self.si.write(opcode, *data)
 
   def reset(self):
-    pass
+    raise NotImplementedError
+
+  def add_sensor_callback(self, f):
+    self.si.add_sensor_callback(f)
+
+  def get_sensor_data(self):
+    if self.si is not None:
+      return self.si.sensor_data
+    else:
+      return None
 
   def start(self):
     self._write(Opcodes.START)
