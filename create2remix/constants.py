@@ -35,11 +35,11 @@ class Packets(dict):
 
   # Can access any attribute in packet_ids via their lowercased name
   def __getattr__(self, name):
-    name = name.lower()
-    if name in packet_names:
-      return self[packet_names[name]]
+    name = name.upper()
+    if name in packet_ids:
+      return self[packet_ids[name]]
 
-    raise AttributeError("{} is not a valid data packet".format(name))
+    raise AttributeError("{} is not a valid data packet (valid ones are: {})".format(name, packet_ids.keys()))
 
   def __repr__(self):
     d = {}
