@@ -178,6 +178,7 @@ packet_ids = dict(
   STASIS                   = 58,
 
   TIMESTAMP                = -1,  # Fake packet, constructed in serial_interface.py
+  POSE                     = -2,
 )
 
 # Length, decoder function, validation
@@ -219,8 +220,8 @@ packet_decoders = {
   packet_ids["REQUESTED_RADIUS"]:         (2, _signed_two_bytes, None),
   packet_ids["REQUESTED_RIGHT_VELOCITY"]: (2, _signed_two_bytes, None),
   packet_ids["REQUESTED_LEFT_VELOCITY"]:  (2, _signed_two_bytes, None),
-  packet_ids["LEFT_ENCODER_COUNTS"]:      (2, _unsigned_two_bytes, None),
-  packet_ids["RIGHT_ENCODER_COUNTS"]:     (2, _unsigned_two_bytes, None),
+  packet_ids["LEFT_ENCODER_COUNTS"]:      (2, _signed_two_bytes, None),
+  packet_ids["RIGHT_ENCODER_COUNTS"]:     (2, _signed_two_bytes, None),
   packet_ids["LIGHT_BUMPER"]:             (1, _decode_light_bumper, None),
   packet_ids["LIGHT_BUMP_LEFT"]:          (2, _unsigned_two_bytes, None),
   packet_ids["LIGHT_BUMP_FRONT_LEFT"]:    (2, _unsigned_two_bytes, None),

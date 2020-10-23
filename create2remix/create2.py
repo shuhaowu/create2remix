@@ -1,10 +1,11 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import logging
+import math
 import struct
 import time
 
-from .constants import Opcodes
+from .constants import Opcodes, Packets
 from .serial_interface import SerialInterface
 
 
@@ -14,7 +15,14 @@ def limit(n, minn, maxn):
 
 class Create2(object):
   def __init__(self, path, baud=115200):
+    self.x, self.y, self.yaw = 0.0, 0.0, 0.0
+    self._first_data_processed = False
+    self._prev_left_encoder = 0
+    self._prev_right_encoder = 0
+
     self.si = SerialInterface(path, baud)
+    self.add_sensor_callback(self._compute_pose)  # lol this code is bad
+
     self.logger = logging.getLogger("create2")
     self.start()
     self.start_sensors()
@@ -91,3 +99,50 @@ class Create2(object):
 
   def start_sensors(self):
     self.si.start_sensors()
+
+  def _compute_pose(self, packets):
+    if not self._first_data_processed:
+      self._prev_left_encoder = packets.left_encoder_counts
+      self._prev_right_encoder = packets.right_encoder_counts
+      packets[Packets.POSE] = (self.x, self.y, self.yaw)
+      self._first_data_processed = True
+      return
+
+    delta_left = packets.left_encoder_counts - self._prev_left_encoder
+    delta_right = packets.right_encoder_counts - self._prev_right_encoder
+
+    if delta_left > 60000:  # some sufficiently large num
+      delta_left = -((65535 % delta_left) + 1)
+    elif delta_left < -60000:
+      delta_left = (delta_left % 65535) + 1
+
+    if delta_right > 60000:
+      delta_right = -((65535 % delta_right) + 1)
+    elif delta_right < -60000:
+      delta_right = (delta_right % 65535) + 1
+
+    left_dist = delta_left * (math.pi * 72.0 / 508.8) / 1000.0
+    right_dist = delta_right * (math.pi * 72.0 / 508.8) / 1000.0
+
+    right_left_diff_dist = right_dist - left_dist
+    delta_yaw = right_left_diff_dist / 0.235
+
+    if abs(right_left_diff_dist) < 0.0001:  # 0.1mm
+      # Straight, without this condition, there would be a division by zero err
+      avg_dist = (left_dist + right_dist) / 2.0
+      delta_x = avg_dist * math.cos(self.yaw)
+      delta_y = avg_dist * math.sin(self.yaw)
+    else:
+      turn_radius = (0.235 / 2) * (left_dist + right_dist) / right_left_diff_dist
+      delta_x = turn_radius * (math.sin(self.yaw + delta_yaw) - math.sin(self.yaw))
+      delta_y = -turn_radius * (math.cos(self.yaw + delta_yaw) - math.cos(self.yaw))
+
+    self.x += delta_x
+    self.y += delta_y
+    self.yaw += delta_yaw
+    self.yaw = self.yaw % (2 * math.pi)
+
+    packets[Packets.POSE] = (self.x, self.y, self.yaw)
+
+    self._prev_left_encoder = packets.left_encoder_counts
+    self._prev_right_encoder = packets.right_encoder_counts

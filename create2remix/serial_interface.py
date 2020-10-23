@@ -9,6 +9,26 @@ import traceback
 from .constants import Opcodes, Packets, _unsigned_single_byte
 
 
+DEFAULT_PACKETS = [
+  Packets.BUMPS_WHEEL_DROPS,
+  Packets.CLIFF_LEFT,
+  Packets.CLIFF_FRONT_LEFT,
+  Packets.CLIFF_FRONT_RIGHT,
+  Packets.CLIFF_RIGHT,
+  Packets.LEFT_ENCODER_COUNTS,
+  Packets.RIGHT_ENCODER_COUNTS,
+  Packets.LIGHT_BUMP_LEFT,
+  Packets.LIGHT_BUMP_FRONT_LEFT,
+  Packets.LIGHT_BUMP_CENTER_LEFT,
+  Packets.LIGHT_BUMP_CENTER_RIGHT,
+  Packets.LIGHT_BUMP_FRONT_RIGHT,
+  Packets.LIGHT_BUMP_RIGHT,
+  Packets.STASIS,
+  Packets.BATTERY_CHARGE,
+  Packets.BATTERY_CAPACITY,
+]
+
+
 class SerialInterface(serial.threaded.Protocol):
   READ_HEADER      = 0
   READ_NBYTES      = 1
@@ -18,7 +38,7 @@ class SerialInterface(serial.threaded.Protocol):
 
   MAX_ATTEMPT = 10
 
-  def __init__(self, path, baudrate):
+  def __init__(self, path, baudrate, packets=DEFAULT_PACKETS):
     self._s = serial.Serial(path, baudrate, timeout=1, write_timeout=1)
     self.logger = logging.getLogger("si")
     self.sensor_data = None
@@ -27,26 +47,16 @@ class SerialInterface(serial.threaded.Protocol):
 
     self.num_packets_per_stream = 0
     self.packet_ids = []
-    self.add_packet(Packets.BUMPS_WHEEL_DROPS)
-    self.add_packet(Packets.CLIFF_LEFT)
-    self.add_packet(Packets.CLIFF_FRONT_LEFT)
-    self.add_packet(Packets.CLIFF_FRONT_RIGHT)
-    self.add_packet(Packets.CLIFF_RIGHT)
-    self.add_packet(Packets.DISTANCE)
-    self.add_packet(Packets.ANGLE)
-    self.add_packet(Packets.LEFT_ENCODER_COUNTS)
-    self.add_packet(Packets.RIGHT_ENCODER_COUNTS)
-    self.add_packet(Packets.LIGHT_BUMP_LEFT)
-    self.add_packet(Packets.LIGHT_BUMP_FRONT_LEFT)
-    self.add_packet(Packets.LIGHT_BUMP_CENTER_LEFT)
-    self.add_packet(Packets.LIGHT_BUMP_CENTER_RIGHT)
-    self.add_packet(Packets.LIGHT_BUMP_FRONT_RIGHT)
-    self.add_packet(Packets.LIGHT_BUMP_RIGHT)
-    self.add_packet(Packets.STASIS)
+    for packet_id in packets:
+      self.add_packet(packet_id)
 
     self.corrupted_packets = 0
     self.total_packets = 0
     self.sensor_callbacks = []
+
+    self.x = 0.0
+    self.y = 0.0
+    self.yaw = 0.0
 
     self._thr = None
 
