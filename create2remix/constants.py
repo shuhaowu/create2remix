@@ -68,19 +68,19 @@ LightBumper = namedtuple("LightBumper", [
 
 
 def _signed_single_byte(data):
-  return struct.unpack("b", data[0])[0]
+  return struct.unpack("b", data[0:1])[0]
 
 
 def _unsigned_single_byte(data):
-  return struct.unpack("B", data[0])[0]
+  return struct.unpack("B", data[0:1])[0]
 
 
 def _signed_two_bytes(data):
-  return struct.unpack(">h", data[0] + data[1])[0]
+  return struct.unpack(">h", data[0:2])[0]
 
 
 def _unsigned_two_bytes(data):
-  return struct.unpack(">H", data[0] + data[1])[0]
+  return struct.unpack(">H", data[0:2])[0]
 
 
 def _unsigned_bit_to_bool(data):

@@ -164,7 +164,7 @@ class SerialInterface(serial.threaded.Protocol):
         self._current_packet_data.append(byte)
         self.logger.trace("received data {}".format(unsigned_byte))
         if len(self._current_packet_data) >= self._current_packet_expected_byte_lengths:
-          data = self._current_packet_decoder(self._current_packet_data)
+          data = self._current_packet_decoder(b''.join(self._current_packet_data))
           self._sensor_data_next[self._current_packet_id] = data
           self.logger.trace("decoded data {} for packet {}".format(data, self._current_packet_id))
 
