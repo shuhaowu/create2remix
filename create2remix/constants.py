@@ -177,8 +177,9 @@ packet_ids = dict(
   SIDE_BRUSH_MOTOR_CURRENT = 57,
   STASIS                   = 58,
 
-  TIMESTAMP                = -1,  # Fake packet, constructed in serial_interface.py
+  TIMESTAMP                = -1,  # Fake packets, constructed in serial_interface.py
   POSE                     = -2,
+  VELOCITY                 = -3,
 )
 
 # Length, decoder function, validation

@@ -14,6 +14,7 @@ def limit(n, minn, maxn):
 
 
 class Create2(object):
+
   def __init__(self, path, baud=115200):
     self.x, self.y, self.yaw = 0.0, 0.0, 0.0
     self._first_data_processed = False
@@ -21,13 +22,17 @@ class Create2(object):
     self._prev_right_encoder = 0
 
     self.si = SerialInterface(path, baud)
-    self.add_sensor_callback(self._compute_pose)  # lol this code is bad
+    self.add_sensor_callback(self._compute_pose_and_velocity) # lol this code is bad
 
     self.logger = logging.getLogger("create2")
     self.start()
     self.start_sensors()
 
   def __del__(self):
+    if getattr(self, "si", None) is None:
+      # If the serial interface failed to initialize, we don't want another exception
+      return
+
     if self.si.connected():
       try:
         self.start()
@@ -63,11 +68,11 @@ class Create2(object):
 
   def safe(self):
     self._write(Opcodes.SAFE)
-    time.sleep(0.3)  # Without this sleep, things like LEDs won't work
+    time.sleep(0.3) # Without this sleep, things like LEDs won't work
 
   def full(self):
     self._write(Opcodes.FULL)
-    time.sleep(0.3)  # Without this sleep, things like LEDs won't work
+    time.sleep(0.3) # Without this sleep, things like LEDs won't work
 
   def power(self):
     self._write(Opcodes.POWER)
@@ -100,7 +105,7 @@ class Create2(object):
   def start_sensors(self):
     self.si.start_sensors()
 
-  def _compute_pose(self, packets):
+  def _compute_pose_and_velocity(self, packets):
     if not self._first_data_processed:
       self._prev_left_encoder = packets.left_encoder_counts
       self._prev_right_encoder = packets.right_encoder_counts
@@ -111,7 +116,7 @@ class Create2(object):
     delta_left = packets.left_encoder_counts - self._prev_left_encoder
     delta_right = packets.right_encoder_counts - self._prev_right_encoder
 
-    if delta_left > 60000:  # some sufficiently large num
+    if delta_left > 60000: # some sufficiently large num
       delta_left = -((65535 % delta_left) + 1)
     elif delta_left < -60000:
       delta_left = (delta_left % 65535) + 1
@@ -127,7 +132,7 @@ class Create2(object):
     right_left_diff_dist = right_dist - left_dist
     delta_yaw = right_left_diff_dist / 0.235
 
-    if abs(right_left_diff_dist) < 0.0001:  # 0.1mm
+    if abs(right_left_diff_dist) < 0.0001: # 0.1mm
       # Straight, without this condition, there would be a division by zero err
       avg_dist = (left_dist + right_dist) / 2.0
       delta_x = avg_dist * math.cos(self.yaw)
@@ -141,6 +146,10 @@ class Create2(object):
     self.y += delta_y
     self.yaw += delta_yaw
     self.yaw = self.yaw % (2 * math.pi)
+
+    # https://navigation.ros.org/setup_guides/odom/setup_odom.html#setting-up-odometry-on-your-robot
+    # linear = (right_wheel_est_vel + left_wheel_est_vel) / 2
+    # angular = (right_wheel_est_vel - left_wheel_est_vel) / wheel_separation;
 
     packets[Packets.POSE] = (self.x, self.y, self.yaw)
 
