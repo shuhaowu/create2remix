@@ -118,6 +118,8 @@ class Create2RemixNode(Node):
     odom.pose.pose.orientation.w = quaternion[3]
 
     # TODO: odom.twist MUST be set!
+    odom.twist.twist.linear.x = packets.velocity[0]
+    odom.twist.twist.angular.z = packets.velocity[1]
 
     self.odom_pub.publish(odom)
 

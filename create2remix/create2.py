@@ -15,11 +15,21 @@ def limit(n, minn, maxn):
 
 class Create2(object):
 
-  def __init__(self, path, baud=115200):
+  def __init__(self, path, baud=115200, velocity_computation_interval=0.01):
     self.x, self.y, self.yaw = 0.0, 0.0, 0.0
     self._first_data_processed = False
     self._prev_left_encoder = 0
     self._prev_right_encoder = 0
+
+    self._velocity_computation_interval = velocity_computation_interval
+    self._prev_left_dist_snapshot = 0
+    self._prev_right_dist_snapshot = 0
+    self._prev_wheel_dist_snapshot_time = time.time()
+
+    self._current_left_dist = 0
+    self._current_right_dist = 0
+
+    self._current_velocity = (0.0, 0.0)
 
     self.si = SerialInterface(path, baud)
     self.add_sensor_callback(self._compute_pose_and_velocity) # lol this code is bad
@@ -129,6 +139,24 @@ class Create2(object):
     left_dist = delta_left * (math.pi * 72.0 / 508.8) / 1000.0
     right_dist = delta_right * (math.pi * 72.0 / 508.8) / 1000.0
 
+    self._current_left_dist += left_dist
+    self._current_right_dist += right_dist
+    now = time.time()
+    dt = now - self._prev_wheel_dist_snapshot_time
+    if dt > self._velocity_computation_interval:
+      # https://navigation.ros.org/setup_guides/odom/setup_odom.html#setting-up-odometry-on-your-robot
+      left_speed = (self._current_left_dist - self._prev_left_dist_snapshot) / dt
+      right_speed = (self._current_right_dist - self._prev_right_dist_snapshot) / dt
+
+      self._current_velocity = (
+        (left_speed + right_speed) / 2.0,
+        (left_speed - right_speed) / 0.235,
+      )
+
+      self._prev_left_dist_snapshot = self._current_left_dist
+      self._prev_right_dist_snapshot = self._current_right_dist
+      self._prev_wheel_dist_snapshot_time = now
+
     right_left_diff_dist = right_dist - left_dist
     delta_yaw = right_left_diff_dist / 0.235
 
@@ -147,11 +175,8 @@ class Create2(object):
     self.yaw += delta_yaw
     self.yaw = self.yaw % (2 * math.pi)
 
-    # https://navigation.ros.org/setup_guides/odom/setup_odom.html#setting-up-odometry-on-your-robot
-    # linear = (right_wheel_est_vel + left_wheel_est_vel) / 2
-    # angular = (right_wheel_est_vel - left_wheel_est_vel) / wheel_separation;
-
     packets[Packets.POSE] = (self.x, self.y, self.yaw)
+    packets[Packets.VELOCITY] = self._current_velocity
 
     self._prev_left_encoder = packets.left_encoder_counts
     self._prev_right_encoder = packets.right_encoder_counts
