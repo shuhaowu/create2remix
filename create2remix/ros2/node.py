@@ -6,12 +6,36 @@ import math
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import BatteryState
 from tf2_ros import TransformBroadcaster
 from tf_transformations import quaternion_from_euler
 
 from .. import Create2, Leds
 
 INPUT_TIMEOUT = 1
+
+
+class LowPassFilter(object):
+
+  def __init__(self, rc):
+    self.last_value = 0
+    self.last_time = 0
+    self.rc = rc
+
+  def filter(self, value):
+    if self.last_time > 0:
+      current_time = time.time()
+      a = current_time - self.last_time
+      a /= (a + self.rc)
+      self.last_time = current_time
+      self.last_value = a * value + (1 - a) * self.last_value
+    else:
+      self.last_time = time.time()
+
+    if abs(self.last_value) <= 0.0001:
+      return 0.0
+
+    return self.last_value
 
 
 class Create2RemixNode(Node):
@@ -21,11 +45,17 @@ class Create2RemixNode(Node):
     # TODO: figure out the QoS parameters better to replace the 10.
     self.cmd_vel_sub = self.create_subscription(Twist, "cmd_vel", self.cmd_vel_callback, 10)
     self.odom_pub = self.create_publisher(Odometry, "odom", 10)
+    self.pub_battery = self.create_publisher(BatteryState, "battery", 10)
+
     # TODO: make tf broadcasting configurable so we can use robot_localization.
     self.tf_broadcaster = TransformBroadcaster(self)
     self.logger = rclpy.logging.get_logger('create2remix')
 
-    self.timer = self.create_timer(1 / 30.0, self.timer_callback)
+    self.timer = self.create_timer(1 / 30.0, self.timer_callback) # TODO: parameterize
+
+    rc = 0.05 # TODO: parameterize
+    self.linear_lpf = LowPassFilter(rc)
+    self.angular_lpf = LowPassFilter(rc)
 
     serial_path = "/dev/roomba" # TODO: parameter
     self.bot = Create2(serial_path)
@@ -37,8 +67,8 @@ class Create2RemixNode(Node):
     self.logger.info(f"Started create2remix on serial path: {serial_path}")
 
     self.vel_timestamp = time.time()
-    self.left_speed = 0
-    self.right_speed = 0
+    self.forward_velocity = 0.0
+    self.angular_velocity = 0.0
 
   def shutdown(self):
     self.bot.drive_direct(0, 0)
@@ -47,20 +77,20 @@ class Create2RemixNode(Node):
 
   def timer_callback(self):
     if time.time() - self.vel_timestamp > INPUT_TIMEOUT: # TODO: input_timeout should be configurable
-      self.bot.drive_direct(0, 0)
+      self.bot.drive_direct(0, 0) # TODO: low pass filter it to 0.
       return
 
-    self.bot.drive_direct(self.right_speed, self.left_speed)
+    forward_velocity = self.linear_lpf.filter(self.forward_velocity)
+    angular_velocity = self.angular_lpf.filter(self.angular_velocity)
+
+    right = int((forward_velocity + (0.235 / 2 * angular_velocity)) * 1000)
+    left = int((forward_velocity - (0.235 / 2 * angular_velocity)) * 1000)
+
+    self.bot.drive_direct(right, left)
 
   def cmd_vel_callback(self, data):
-    fwd_vel = data.linear.x
-    rot_vel = data.angular.z
-
-    right = fwd_vel + (0.235 / 2 * rot_vel)
-    left = fwd_vel - (0.235 / 2 * rot_vel)
-
-    self.left_speed = int(left * 1000)
-    self.right_speed = int(right * 1000)
+    self.forward_velocity = data.linear.x
+    self.angular_velocity = data.angular.z
     self.vel_timestamp = time.time()
 
   def on_sensor_message(self, packets):
@@ -122,6 +152,12 @@ class Create2RemixNode(Node):
     odom.twist.twist.angular.z = packets.velocity[1]
 
     self.odom_pub.publish(odom)
+
+    battery_state = BatteryState()
+    battery_state.charge = packets.battery_charge / 1000.0
+    battery_state.capacity = packets.battery_capacity / 1000.0
+    battery_state.percentage = packets.battery_charge / float(packets.battery_capacity)
+    self.pub_battery.publish(battery_state)
 
     # print("l = {} r = {} x = {:.2f} y = {:.2f} yaw = {:.2f} ({:.2f}% {}/{})".format(
     #   packets.left_encoder_counts,
