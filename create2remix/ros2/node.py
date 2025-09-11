@@ -6,7 +6,7 @@ import math
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import BatteryState
+from sensor_msgs.msg import BatteryState, JointState
 from tf2_ros import TransformBroadcaster
 from tf_transformations import quaternion_from_euler
 
@@ -42,10 +42,31 @@ class Create2RemixNode(Node):
 
   def __init__(self):
     super().__init__("create2remix_node")
-    # TODO: figure out the QoS parameters better to replace the 10.
+    self.declare_parameter("serial_path", "/dev/roomba")
+    self.declare_parameter("low_pass_filter_rc", 0.05)
+    self.declare_parameter("left_wheel_joint_name", "left_wheel_joint")
+    self.declare_parameter("right_wheel_joint_name", "right_wheel_joint")
+    self.declare_parameter("odom_frame_id", "odom")
+    self.declare_parameter("base_footprint_frame_id", "base_footprint")
+
     self.cmd_vel_sub = self.create_subscription(Twist, "cmd_vel", self.cmd_vel_callback, 10)
     self.odom_pub = self.create_publisher(Odometry, "odom", 10)
-    self.pub_battery = self.create_publisher(BatteryState, "battery", 10)
+    self.battery_pub = self.create_publisher(BatteryState, "battery", 10)
+    self.joint_state_pub = self.create_publisher(JointState, "joint_states", 10)
+
+    self.left_wheel_joint_name = self.get_parameter("left_wheel_joint_name").get_parameter_value().string_value
+    self.right_wheel_joint_name = self.get_parameter("right_wheel_joint_name").get_parameter_value().string_value
+    self.odom_frame_id = self.get_parameter("odom_frame_id").get_parameter_value().string_value
+    self.base_footprint_frame_id = self.get_parameter("base_footprint_frame_id").get_parameter_value().string_value
+
+    self.vel_timestamp = time.time()
+    self.forward_velocity = 0.0
+    self.angular_velocity = 0.0
+
+    self.last_left_encoder_counts = None
+    self.last_right_encoder_counts = None
+    self.left_encoder_total = 0.0
+    self.right_encoder_total = 0.0
 
     # TODO: make tf broadcasting configurable so we can use robot_localization.
     self.tf_broadcaster = TransformBroadcaster(self)
@@ -53,11 +74,11 @@ class Create2RemixNode(Node):
 
     self.timer = self.create_timer(1 / 30.0, self.timer_callback) # TODO: parameterize
 
-    rc = 0.05 # TODO: parameterize
+    rc = self.get_parameter("low_pass_filter_rc").get_parameter_value().double_value
     self.linear_lpf = LowPassFilter(rc)
     self.angular_lpf = LowPassFilter(rc)
 
-    serial_path = "/dev/roomba" # TODO: parameter
+    serial_path = self.get_parameter("serial_path").get_parameter_value().string_value
     self.bot = Create2(serial_path)
     self.bot.safe()
     self.bot.add_sensor_callback(self.on_sensor_message)
@@ -65,10 +86,6 @@ class Create2RemixNode(Node):
     self.bot.digit_leds_ascii(*"ARGH")
     self.bot.leds(Leds.DEBRIS, 0, 255)
     self.logger.info(f"Started create2remix on serial path: {serial_path}")
-
-    self.vel_timestamp = time.time()
-    self.forward_velocity = 0.0
-    self.angular_velocity = 0.0
 
   def shutdown(self):
     self.bot.drive_direct(0, 0)
@@ -112,13 +129,17 @@ class Create2RemixNode(Node):
     # packets.light_bump_right
     # packets.stasis
 
+    seconds = math.floor(packets.timestamp)
+    nanoseconds = int((packets.timestamp - seconds) * 1000000000)
+    stamp_msg = rclpy.time.Time(seconds=seconds, nanoseconds=nanoseconds).to_msg()
+
     x, y, yaw = packets.pose
     quaternion = quaternion_from_euler(0, 0, yaw)
 
     t = TransformStamped()
-    t.header.stamp = self.get_clock().now().to_msg()
-    t.header.frame_id = "odom"
-    t.child_frame_id = "base_link"
+    t.header.stamp = self.get_clock().now().to_msg() # Need to use the wrong time because otherwise rviz won't be happy
+    t.header.frame_id = self.odom_frame_id
+    t.child_frame_id = self.base_footprint_frame_id
 
     t.transform.translation.x = x
     t.transform.translation.y = y
@@ -132,11 +153,10 @@ class Create2RemixNode(Node):
     self.tf_broadcaster.sendTransform(t)
 
     odom = Odometry()
-    seconds = math.floor(packets.timestamp)
-    nanoseconds = int((packets.timestamp - seconds) * 1000000000)
-    odom.header.stamp = rclpy.time.Time(seconds=seconds, nanoseconds=nanoseconds).to_msg()
-    odom.header.frame_id = "odom" # TODO: configurable
-    odom.child_frame_id = "base_link"
+
+    odom.header.stamp = stamp_msg
+    odom.header.frame_id = self.odom_frame_id
+    odom.child_frame_id = self.base_footprint_frame_id
 
     odom.pose.pose.position.x = x
     odom.pose.pose.position.y = y
@@ -157,7 +177,41 @@ class Create2RemixNode(Node):
     battery_state.charge = packets.battery_charge / 1000.0
     battery_state.capacity = packets.battery_capacity / 1000.0
     battery_state.percentage = packets.battery_charge / float(packets.battery_capacity)
-    self.pub_battery.publish(battery_state)
+    self.battery_pub.publish(battery_state)
+
+    joint_states = JointState()
+    joint_states.header.stamp = stamp_msg
+    joint_states.name = [self.left_wheel_joint_name, self.right_wheel_joint_name]
+    if self.last_left_encoder_counts is None:
+      self.last_left_encoder_counts = packets.left_encoder_counts
+
+    if self.last_right_encoder_counts is None:
+      self.last_right_encoder_counts = packets.right_encoder_counts
+
+    # Left encoder
+    left_delta = packets.left_encoder_counts - self.last_left_encoder_counts
+    if left_delta > 32767:
+      left_delta -= 65536
+    elif left_delta < -32768:
+      left_delta += 65536
+    self.left_encoder_total += left_delta
+    self.last_left_encoder_counts = packets.left_encoder_counts
+
+    # Right encoder
+    right_delta = packets.right_encoder_counts - self.last_right_encoder_counts
+    if right_delta > 32767:
+      right_delta -= 65536
+    elif right_delta < -32768:
+      right_delta += 65536
+    self.right_encoder_total += right_delta
+    self.last_right_encoder_counts = packets.right_encoder_counts
+
+    joint_states.position = [
+      (self.left_encoder_total / 508.8) * 2 * math.pi,
+      (self.right_encoder_total / 508.8) * 2 * math.pi,
+    ]
+
+    self.joint_state_pub.publish(joint_states)
 
     # print("l = {} r = {} x = {:.2f} y = {:.2f} yaw = {:.2f} ({:.2f}% {}/{})".format(
     #   packets.left_encoder_counts,
