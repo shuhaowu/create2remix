@@ -68,11 +68,14 @@ class Create2RemixNode(Node):
     self.left_encoder_total = 0.0
     self.right_encoder_total = 0.0
 
+    self.last_pose = None
+
     # TODO: make tf broadcasting configurable so we can use robot_localization.
     self.tf_broadcaster = TransformBroadcaster(self)
     self.logger = rclpy.logging.get_logger('create2remix')
 
-    self.timer = self.create_timer(1 / 30.0, self.timer_callback) # TODO: parameterize
+    self.timer = self.create_timer(1 / 30.0, self.timer_callback) # TODO: parameterize frequency
+    self.tf_timer = self.create_timer(1 / 10.0, self.tf_timer_callback) # TODO: parameterize frequency
 
     rc = self.get_parameter("low_pass_filter_rc").get_parameter_value().double_value
     self.linear_lpf = LowPassFilter(rc)
@@ -105,6 +108,29 @@ class Create2RemixNode(Node):
 
     self.bot.drive_direct(right, left)
 
+  def tf_timer_callback(self):
+    if self.last_pose is None:
+      return
+
+    t = TransformStamped()
+    t.header.stamp = self.last_pose[0]
+    t.header.frame_id = self.odom_frame_id
+    t.child_frame_id = self.base_footprint_frame_id
+
+    x, y, yaw = self.last_pose[1]
+    quaternion = quaternion_from_euler(0, 0, yaw)
+
+    t.transform.translation.x = x
+    t.transform.translation.y = y
+    t.transform.translation.z = 0.0
+
+    t.transform.rotation.x = quaternion[0]
+    t.transform.rotation.y = quaternion[1]
+    t.transform.rotation.z = quaternion[2]
+    t.transform.rotation.w = quaternion[3]
+
+    self.tf_broadcaster.sendTransform(t)
+
   def cmd_vel_callback(self, data):
     self.forward_velocity = data.linear.x
     self.angular_velocity = data.angular.z
@@ -133,24 +159,9 @@ class Create2RemixNode(Node):
     nanoseconds = int((packets.timestamp - seconds) * 1000000000)
     stamp_msg = rclpy.time.Time(seconds=seconds, nanoseconds=nanoseconds).to_msg()
 
+    self.last_pose = (stamp_msg, packets.pose)
     x, y, yaw = packets.pose
     quaternion = quaternion_from_euler(0, 0, yaw)
-
-    t = TransformStamped()
-    t.header.stamp = self.get_clock().now().to_msg() # Need to use the wrong time because otherwise rviz won't be happy
-    t.header.frame_id = self.odom_frame_id
-    t.child_frame_id = self.base_footprint_frame_id
-
-    t.transform.translation.x = x
-    t.transform.translation.y = y
-    t.transform.translation.z = 0.0
-
-    t.transform.rotation.x = quaternion[0]
-    t.transform.rotation.y = quaternion[1]
-    t.transform.rotation.z = quaternion[2]
-    t.transform.rotation.w = quaternion[3]
-
-    self.tf_broadcaster.sendTransform(t)
 
     odom = Odometry()
 
