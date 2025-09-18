@@ -48,6 +48,7 @@ class Create2RemixNode(Node):
     self.declare_parameter("right_wheel_joint_name", "right_wheel_joint")
     self.declare_parameter("odom_frame_id", "odom")
     self.declare_parameter("base_footprint_frame_id", "base_footprint")
+    self.declare_parameter("safe_mode", True)
 
     self.cmd_vel_sub = self.create_subscription(Twist, "cmd_vel", self.cmd_vel_callback, 10)
     self.odom_pub = self.create_publisher(Odometry, "odom", 10)
@@ -58,6 +59,7 @@ class Create2RemixNode(Node):
     self.right_wheel_joint_name = self.get_parameter("right_wheel_joint_name").get_parameter_value().string_value
     self.odom_frame_id = self.get_parameter("odom_frame_id").get_parameter_value().string_value
     self.base_footprint_frame_id = self.get_parameter("base_footprint_frame_id").get_parameter_value().string_value
+    safe_mode = self.get_parameter("safe_mode").get_parameter_value().bool_value
 
     self.vel_timestamp = time.time()
     self.forward_velocity = 0.0
@@ -83,7 +85,12 @@ class Create2RemixNode(Node):
 
     serial_path = self.get_parameter("serial_path").get_parameter_value().string_value
     self.bot = Create2(serial_path)
-    self.bot.safe()
+    if safe_mode:
+      self.bot.safe()
+    else:
+      self.logger.warn("Starting in UNSAFE mode without wheel and cliff sensors!!! DRIVE CAREFULLY!!")
+      self.bot.full()
+
     self.bot.add_sensor_callback(self.on_sensor_message)
 
     self.bot.digit_leds_ascii(*"ARGH")
