@@ -4,7 +4,7 @@ import rclpy.logging
 import time
 import math
 from rclpy.node import Node
-from geometry_msgs.msg import Twist, TransformStamped
+from geometry_msgs.msg import Twist, TransformStamped, TwistStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import BatteryState, JointState
 from tf2_ros import TransformBroadcaster
@@ -48,9 +48,16 @@ class Create2RemixNode(Node):
     self.declare_parameter("right_wheel_joint_name", "right_wheel_joint")
     self.declare_parameter("odom_frame_id", "odom")
     self.declare_parameter("base_footprint_frame_id", "base_footprint")
+    self.declare_parameter("cmd_vel_is_stamped", False)
     self.declare_parameter("safe_mode", True)
 
-    self.cmd_vel_sub = self.create_subscription(Twist, "cmd_vel", self.cmd_vel_callback, 10)
+    self.cmd_vel_is_stamped = self.get_parameter("cmd_vel_is_stamped").get_parameter_value().bool_value
+
+    if self.cmd_vel_is_stamped:
+      self.cmd_vel_sub = self.create_subscription(TwistStamped, "cmd_vel", self.cmd_vel_callback, 10)
+    else:
+      self.cmd_vel_sub = self.create_subscription(Twist, "cmd_vel", self.cmd_vel_callback, 10)
+
     self.odom_pub = self.create_publisher(Odometry, "odom", 10)
     self.battery_pub = self.create_publisher(BatteryState, "battery", 10)
     self.joint_state_pub = self.create_publisher(JointState, "joint_states", 10)
@@ -139,6 +146,9 @@ class Create2RemixNode(Node):
     self.tf_broadcaster.sendTransform(t)
 
   def cmd_vel_callback(self, data):
+    if self.cmd_vel_is_stamped:
+      data = data.twist
+
     self.forward_velocity = data.linear.x
     self.angular_velocity = data.angular.z
     self.vel_timestamp = time.time()
