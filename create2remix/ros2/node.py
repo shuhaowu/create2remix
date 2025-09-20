@@ -81,6 +81,8 @@ class Create2RemixNode(Node):
 
     self.last_battery_publish_time = 0
 
+    self.is_shutdown = False
+
     # TODO: make tf broadcasting configurable so we can use robot_localization.
     self.tf_broadcaster = TransformBroadcaster(self)
     self.logger = rclpy.logging.get_logger('create2remix')
@@ -107,9 +109,11 @@ class Create2RemixNode(Node):
     self.logger.info(f"Started create2remix on serial path: {serial_path}")
 
   def shutdown(self):
+    self.is_shutdown = True
     self.bot.drive_direct(0, 0)
     self.bot.digit_leds_ascii(*"YARG")
     self.bot.leds(Leds.DEBRIS, 0, 255)
+    self.bot.shutdown()
 
   def timer_callback(self):
     if time.time() - self.vel_timestamp > INPUT_TIMEOUT: # TODO: input_timeout should be configurable
@@ -173,6 +177,8 @@ class Create2RemixNode(Node):
     # packets.light_bump_front_right
     # packets.light_bump_right
     # packets.stasis
+    if self.is_shutdown:
+      return
 
     seconds = math.floor(packets.timestamp)
     nanoseconds = int((packets.timestamp - seconds) * 1000000000)
@@ -207,6 +213,9 @@ class Create2RemixNode(Node):
     now = time.monotonic()
     if now - self.last_battery_publish_time >= 1.0:
       battery_state = BatteryState()
+
+      battery_state.current = packets.current / 1000.0
+      battery_state.voltage = packets.voltage / 1000.0
       battery_state.charge = packets.battery_charge / 1000.0
       battery_state.capacity = packets.battery_capacity / 1000.0
       battery_state.percentage = packets.battery_charge / float(packets.battery_capacity)

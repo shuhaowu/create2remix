@@ -39,6 +39,9 @@ class Create2(object):
     self.start_sensors()
 
   def __del__(self):
+    self.shutdown()
+
+  def shutdown(self):
     if getattr(self, "si", None) is None:
       # If the serial interface failed to initialize, we don't want another exception
       return
@@ -59,7 +62,7 @@ class Create2(object):
     self.si.write(opcode, *data)
 
   def reset(self):
-    raise NotImplementedError
+    self._write(Opcodes.RESET)
 
   def add_sensor_callback(self, f):
     self.si.add_sensor_callback(f)
@@ -72,9 +75,11 @@ class Create2(object):
 
   def start(self):
     self._write(Opcodes.START)
+    time.sleep(0.3) # Not sure if this is needed
 
   def stop(self):
     self._write(Opcodes.STOP)
+    time.sleep(0.3) # Not sure if this is needed
 
   def safe(self):
     self._write(Opcodes.SAFE)

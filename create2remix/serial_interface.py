@@ -24,6 +24,8 @@ DEFAULT_PACKETS = [
   Packets.LIGHT_BUMP_FRONT_RIGHT,
   Packets.LIGHT_BUMP_RIGHT,
   Packets.STASIS,
+  Packets.VOLTAGE,
+  Packets.CURRENT,
   Packets.BATTERY_CHARGE,
   Packets.BATTERY_CAPACITY,
 ]
