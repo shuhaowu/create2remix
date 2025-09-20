@@ -79,6 +79,8 @@ class Create2RemixNode(Node):
 
     self.last_pose = None
 
+    self.last_battery_publish_time = 0
+
     # TODO: make tf broadcasting configurable so we can use robot_localization.
     self.tf_broadcaster = TransformBroadcaster(self)
     self.logger = rclpy.logging.get_logger('create2remix')
@@ -201,11 +203,15 @@ class Create2RemixNode(Node):
 
     self.odom_pub.publish(odom)
 
-    battery_state = BatteryState()
-    battery_state.charge = packets.battery_charge / 1000.0
-    battery_state.capacity = packets.battery_capacity / 1000.0
-    battery_state.percentage = packets.battery_charge / float(packets.battery_capacity)
-    self.battery_pub.publish(battery_state)
+    # Only publish battery state if at least 1s has passed since last publish
+    now = time.monotonic()
+    if now - self.last_battery_publish_time >= 1.0:
+      battery_state = BatteryState()
+      battery_state.charge = packets.battery_charge / 1000.0
+      battery_state.capacity = packets.battery_capacity / 1000.0
+      battery_state.percentage = packets.battery_charge / float(packets.battery_capacity)
+      self.battery_pub.publish(battery_state)
+      self.last_battery_publish_time = now
 
     joint_states = JointState()
     joint_states.header.stamp = stamp_msg
