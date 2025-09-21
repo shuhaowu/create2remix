@@ -50,6 +50,7 @@ class Create2RemixNode(Node):
     self.declare_parameter("base_footprint_frame_id", "base_footprint")
     self.declare_parameter("cmd_vel_is_stamped", False)
     self.declare_parameter("safe_mode", True)
+    self.declare_parameter("timer_frequency", 20.0)  # Added parameter for timer frequency
 
     self.cmd_vel_is_stamped = self.get_parameter("cmd_vel_is_stamped").get_parameter_value().bool_value
 
@@ -87,7 +88,8 @@ class Create2RemixNode(Node):
     self.tf_broadcaster = TransformBroadcaster(self)
     self.logger = rclpy.logging.get_logger('create2remix')
 
-    self.timer = self.create_timer(1 / 30.0, self.timer_callback) # TODO: parameterize frequency
+    timer_frequency = self.get_parameter("timer_frequency").get_parameter_value().double_value
+    self.timer = self.create_timer(1 / timer_frequency, self.timer_callback) # Timer frequency is now configurable
     self.tf_timer = self.create_timer(1 / 10.0, self.tf_timer_callback) # TODO: parameterize frequency
 
     rc = self.get_parameter("low_pass_filter_rc").get_parameter_value().double_value
@@ -95,7 +97,7 @@ class Create2RemixNode(Node):
     self.angular_lpf = LowPassFilter(rc)
 
     serial_path = self.get_parameter("serial_path").get_parameter_value().string_value
-    self.bot = Create2(serial_path)
+    self.bot = Create2(serial_path, logger=self.logger)
     if safe_mode:
       self.bot.safe()
     else:

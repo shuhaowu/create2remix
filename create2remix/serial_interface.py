@@ -10,20 +10,22 @@ from .constants import Opcodes, Packets, _unsigned_single_byte
 
 
 DEFAULT_PACKETS = [
-  Packets.BUMPS_WHEEL_DROPS,
-  Packets.CLIFF_LEFT,
-  Packets.CLIFF_FRONT_LEFT,
-  Packets.CLIFF_FRONT_RIGHT,
-  Packets.CLIFF_RIGHT,
+  # Having too much unused data can cause serial corruption and timeout issues?
+  # Not 100% confirmed, just a theory.
+  # Packets.BUMPS_WHEEL_DROPS,
+  # Packets.CLIFF_LEFT,
+  # Packets.CLIFF_FRONT_LEFT,
+  # Packets.CLIFF_FRONT_RIGHT,
+  # Packets.CLIFF_RIGHT,
+  # Packets.LIGHT_BUMP_LEFT,
+  # Packets.LIGHT_BUMP_FRONT_LEFT,
+  # Packets.LIGHT_BUMP_CENTER_LEFT,
+  # Packets.LIGHT_BUMP_CENTER_RIGHT,
+  # Packets.LIGHT_BUMP_FRONT_RIGHT,
+  # Packets.LIGHT_BUMP_RIGHT,
+  # Packets.STASIS,
   Packets.LEFT_ENCODER_COUNTS,
   Packets.RIGHT_ENCODER_COUNTS,
-  Packets.LIGHT_BUMP_LEFT,
-  Packets.LIGHT_BUMP_FRONT_LEFT,
-  Packets.LIGHT_BUMP_CENTER_LEFT,
-  Packets.LIGHT_BUMP_CENTER_RIGHT,
-  Packets.LIGHT_BUMP_FRONT_RIGHT,
-  Packets.LIGHT_BUMP_RIGHT,
-  Packets.STASIS,
   Packets.VOLTAGE,
   Packets.CURRENT,
   Packets.BATTERY_CHARGE,
@@ -40,9 +42,13 @@ class SerialInterface(serial.threaded.Protocol):
 
   MAX_ATTEMPT = 10
 
-  def __init__(self, path, baudrate, packets=DEFAULT_PACKETS):
+  def __init__(self, path, baudrate, packets=DEFAULT_PACKETS, logger=None):
     self._s = serial.Serial(path, baudrate, timeout=1, write_timeout=1)
-    self.logger = logging.getLogger("si")
+    if logger is None:
+      self.logger = logging.getLogger("si")
+    else:
+      self.logger = logger
+
     self.sensor_data = None
 
     self.log_data = not bool(os.environ.get("DO_NOT_LOG_DATA", ""))

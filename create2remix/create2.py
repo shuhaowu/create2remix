@@ -14,8 +14,7 @@ def limit(n, minn, maxn):
 
 
 class Create2(object):
-
-  def __init__(self, path, baud=115200, velocity_computation_interval=0.01):
+  def __init__(self, path, baud=115200, logger=None, velocity_computation_interval=0.01, reset=False):
     self.x, self.y, self.yaw = 0.0, 0.0, 0.0
     self._first_data_processed = False
     self._prev_left_encoder = 0
@@ -34,7 +33,20 @@ class Create2(object):
     self.si = SerialInterface(path, baud)
     self.add_sensor_callback(self._compute_pose_and_velocity) # lol this code is bad
 
-    self.logger = logging.getLogger("create2")
+    if logger is None:
+      self.logger = logging.getLogger("create2")
+    else:
+      self.logger = logger
+
+    if reset: # This will print the firmware version on startup
+      self.logger.warn("Resetting the Create 2 to get the firmware version...")
+      self.reset()
+      time.sleep(5)
+      data = self.si._s.read(2048).decode("utf-8", errors="ignore")
+      self.si._s.reset_input_buffer()
+      self.logger.info(f"Initial boot data: {data}")
+
+    self.stop() # Try to reset the robot to a known mode
     self.start()
     self.start_sensors()
 
